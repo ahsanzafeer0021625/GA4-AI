@@ -29,43 +29,54 @@ GA4_METRICS = [
 
 # --- Authentication ---
 try:
-    # Use the same secrets structure
     credentials = service_account.Credentials.from_service_account_info(
         st.secrets["gcp_service_account"]
     )
     scoped_credentials = credentials.with_scopes(
         ["https://www.googleapis.com/auth/analytics.readonly"]
     )
-    # Build the service object
     analytics = build("analyticsdata", "v1beta", credentials=scoped_credentials)
     GA4_PROPERTY_ID = st.secrets["ga4"]["property_id"]
 except Exception as e:
-    st.error(f"🚨 Authentication Error: Could not configure Google clients. Please check your Streamlit secrets. Error: {e}")
+    st.error(f"🚨 Authentication Error: Please check your secrets. Error: {e}")
     st.stop()
 
 # --- User Input Form ---
-st.header("Build Your Report")
-
+st.header("1. Select Dimensions and Metrics")
 col1, col2 = st.columns(2)
 with col1:
     selected_dimensions = st.multiselect(
         "Select Dimensions",
         options=sorted(GA4_DIMENSIONS),
-        default=["pagePath", "firstUserDefaultChannelGroup"]
+        default=["sessionDefaultChannelGroup"]
     )
 with col2:
     selected_metrics = st.multiselect(
         "Select Metrics",
         options=sorted(GA4_METRICS),
-        default=["sessions", "activeUsers"]
+        default=["sessions"]
     )
 
-today = datetime.date.today()
-seven_days_ago = today - datetime.timedelta(days=7)
-date_range = st.date_input(
-    "Select a date range",
-    value=(seven_days_ago, today)
-)
+st.header("2. Select Date Range and Filters (Optional)")
+col_date, col_filter1, col_filter2 = st.columns(3)
+with col_date:
+    today = datetime.date.today()
+    start_default = today - datetime.timedelta(days=8)
+    end_default = today - datetime.timedelta(days=2)
+    date_range = st.date_input(
+        "Select a date range",
+        value=(start_default, end_default)
+    )
+with col_filter1:
+    channel_filter = st.text_input(
+        "Filter by Channel Group",
+        placeholder="e.g., Organic Search"
+    )
+with col_filter2:
+    device_filter = st.selectbox(
+        "Filter by Device",
+        options=["All", "Desktop", "Mobile", "Tablet"]
+    )
 
 # --- Report Generation ---
 if st.button("Generate Report", type="primary"):
@@ -74,7 +85,7 @@ if st.button("Generate Report", type="primary"):
     else:
         with st.spinner("Fetching data from Google Analytics..."):
             try:
-                # Build the request body dictionary
+                # Build the request body
                 request_body = {
                     "dimensions": [{"name": dim} for dim in selected_dimensions],
                     "metrics": [{"name": metric} for metric in selected_metrics],
@@ -84,16 +95,39 @@ if st.button("Generate Report", type="primary"):
                     }]
                 }
 
+                all_filters = []
+                if device_filter and device_filter != "All":
+                    all_filters.append({
+                        "filter": {
+                            "fieldName": "deviceCategory",
+                            "stringFilter": {"value": device_filter}
+                        }
+                    })
+                
+                if channel_filter:
+                    all_filters.append({
+                        "filter": {
+                            "fieldName": "sessionDefaultChannelGroup",
+                            "stringFilter": {"value": channel_filter}
+                        }
+                    })
+
+                if all_filters:
+                    request_body["dimensionFilter"] = {"andGroup": {"expressions": all_filters}}
+
                 # Execute the request
                 response = analytics.properties().runReport(
                     property=f"properties/{GA4_PROPERTY_ID}",
                     body=request_body
                 ).execute()
+                
+                # --- NEW: CHECK FOR SAMPLING ---
+                if response.get('samplingMetadatas'):
+                    st.warning("⚠️ Data is sampled, which may cause minor discrepancies with the GA4 interface.", icon="⚠️")
 
-                # Process the response into a DataFrame
+                # Process the response
                 headers = [h['name'] for h in response.get('dimensionHeaders', [])] + \
                           [h['name'] for h in response.get('metricHeaders', [])]
-                
                 rows = []
                 for row in response.get('rows', []):
                     row_values = [dv['value'] for dv in row.get('dimensionValues', [])] + \
