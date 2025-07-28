@@ -46,7 +46,7 @@ except (KeyError, FileNotFoundError):
     st.stop()
 
 
-# --- Tool Definition ---
+# --- Tool Definition (Improved Version) ---
 @st.cache_data
 def get_analytics_report(metrics: list[str], dimensions: list[str], start_date: str, end_date: str):
     """Runs a report on the GA4 Data API. This is the tool the AI will use."""
@@ -57,13 +57,22 @@ def get_analytics_report(metrics: list[str], dimensions: list[str], start_date: 
             dimensions=[Dimension(name=dim) for dim in dimensions],
             metrics=[Metric(name=metric) for metric in metrics],
             date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+            limit=1000  # Safeguard: Limit the rows to prevent memory overload
         )
-        response = analytics_client.run_report(request)
+        # Safeguard: Set a 60-second timeout for the API call
+        response = analytics_client.run_report(request, timeout=60)
+        
         headers = [header.name for header in response.dimension_headers] + [header.name for header in response.metric_headers]
         rows = [[item.value for item in row.dimension_values] + [item.value for item in row.metric_values] for row in response.rows]
+        
+        if not rows:
+            return "No data found for this specific request."
+            
         return pd.DataFrame(rows, columns=headers).to_string()
+        
     except Exception as e:
-        return f"Tool execution failed with error: {e}"
+        # Return a user-friendly error if the tool fails or times out
+        return f"Tool execution failed. The request may have been too complex or timed out. Error: {e}"
 
 
 # --- Agent Setup ---
