@@ -98,4 +98,7 @@ if prompt := st.chat_input("Ask a question about your GA4 data..."):
         response = st.session_state.chat.send_message(prompt)
 
     with st.chat_message("assistant"):
-        st.markdown(response.text)
+        # This new code is more robust. It specifically extracts and joins
+        # the text content from the AI's response parts.
+        response_text = "".join(part.text for part in response.parts)
+        st.markdown(response_text)
