@@ -1,4 +1,5 @@
-streamlit
-pandas
-google-generativeai
-google-analytics-data
+streamlit==1.36.0
+pandas==2.2.2
+google-generativeai==0.5.4
+google-analytics-data==0.22.0
+google-auth==2.29.0
