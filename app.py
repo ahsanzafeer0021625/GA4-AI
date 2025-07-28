@@ -46,33 +46,44 @@ except (KeyError, FileNotFoundError):
     st.stop()
 
 
-# --- Tool Definition (Improved Version) ---
+# --- Tool Definition (Updated with Debugging) ---
 @st.cache_data
 def get_analytics_report(metrics: list[str], dimensions: list[str], start_date: str, end_date: str):
     """Runs a report on the GA4 Data API. This is the tool the AI will use."""
-    print(f"Running GA4 Report: Dimensions={dimensions}, Metrics={metrics}")
+    
+    # --- DEBUG: Print when the tool is called and with what arguments ---
+    print("--- Tool Called: get_analytics_report ---")
+    print(f"Dimensions: {dimensions}")
+    print(f"Metrics: {metrics}")
+    print(f"Date Range: {start_date} to {end_date}")
+    # --- END DEBUG ---
+
     try:
         request = RunReportRequest(
             property=f"properties/{GA4_PROPERTY_ID}",
             dimensions=[Dimension(name=dim) for dim in dimensions],
             metrics=[Metric(name=metric) for metric in metrics],
             date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
-            limit=1000  # Safeguard: Limit the rows to prevent memory overload
+            limit=1000
         )
-        # Safeguard: Set a 60-second timeout for the API call
         response = analytics_client.run_report(request, timeout=60)
         
         headers = [header.name for header in response.dimension_headers] + [header.name for header in response.metric_headers]
         rows = [[item.value for item in row.dimension_values] + [item.value for item in row.metric_values] for row in response.rows]
         
         if not rows:
+            print("--- Tool Result: No data found. ---") # DEBUG
             return "No data found for this specific request."
             
-        return pd.DataFrame(rows, columns=headers).to_string()
+        result_string = pd.DataFrame(rows, columns=headers).to_string()
+        print("--- Tool Result: Success! Returning data. ---") # DEBUG
+        return result_string
         
     except Exception as e:
-        # Return a user-friendly error if the tool fails or times out
-        return f"Tool execution failed. The request may have been too complex or timed out. Error: {e}"
+        # --- DEBUG: Print the exact error from the API ---
+        print(f"!!! TOOL FAILED! API Error: {e} !!!")
+        # --- END DEBUG ---
+        return f"Tool execution failed. The request may have been too complex or the API returned an error: {e}"
 
 
 # --- Agent Setup ---
@@ -107,7 +118,5 @@ if prompt := st.chat_input("Ask a question about your GA4 data..."):
         response = st.session_state.chat.send_message(prompt)
 
     with st.chat_message("assistant"):
-        # This new code is more robust. It specifically extracts and joins
-        # the text content from the AI's response parts.
         response_text = "".join(part.text for part in response.parts)
         st.markdown(response_text)
